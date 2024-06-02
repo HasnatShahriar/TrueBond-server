@@ -32,11 +32,60 @@ async function run() {
     const userCollection = client.db("trueBond").collection("users");
 
     // users related api
+    app.get('/users', async (req, res) => {
+      const result = await userCollection.find().toArray();
+      res.send(result);
+    });
+
+
     app.post('/users', async (req, res) => {
       const user = req.body;
+      // insert email if user doesn't exist
+      const query = { email: user.email }
+      const existingUser = await userCollection.findOne(query);
+      if (existingUser) {
+        return res.send({ message: 'User Already Exists', insertedId: null })
+      }
       const result = await userCollection.insertOne(user);
       res.send(result);
     })
+
+    app.patch('/users/admin/:id', async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const updatedDoc = {
+        $set: {
+          role: 'admin'
+        }
+      }
+      const result = await userCollection.updateOne(filter, updatedDoc);
+      res.send(result);
+
+    })
+
+    app.patch('/users/premium/:id', async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const updatedDoc = {
+        $set: {
+          role: 'premium'
+        }
+      }
+      const result = await userCollection.updateOne(filter, updatedDoc);
+      res.send(result);
+
+    })
+
+    // Search users by username
+    app.get('/users/search', async (req, res) => {
+      const username = req.query.username;
+      if (!username) {
+        return res.status(400).send({ message: 'Username query parameter is required' });
+      }
+      const query = { name: { $regex: username, $options: 'i' } }; // Case-insensitive search
+      const result = await userCollection.find(query).toArray();
+      res.send(result);
+    });
 
     // review related api
     app.get('/reviews', async (req, res) => {
