@@ -37,18 +37,69 @@ async function run() {
       res.send(result);
     });
 
+    // save user data in db
 
-    app.post('/users', async (req, res) => {
+    app.put('/user', async (req, res) => {
       const user = req.body;
-      // insert email if user doesn't exist
-      const query = { email: user.email }
-      const existingUser = await userCollection.findOne(query);
-      if (existingUser) {
-        return res.send({ message: 'User Already Exists', insertedId: null })
+      const query = { email: user.email };
+      if (!user || !user.email) {
+        return res.status(400).send({ message: "User email is required" });
       }
-      const result = await userCollection.insertOne(user);
+
+      // check if user already exists in db
+      const isExist = await userCollection.findOne(query)
+
+      if (isExist) {
+        if (user.status === 'Requested for Premium') {
+          const result = await userCollection.updateOne(query, {
+            $set: { status: user?.status }
+          })
+          return res.send(result)
+        }
+      } else {
+        return res.send(isExist)
+      }
+
+      // save user for the first time
+      const options = { upsert: true };
+      const updateDoc = {
+        $set: {
+          ...user,
+          timestamp: Date.now()
+        }
+      };
+      const result = await userCollection.updateOne(query, updateDoc, options);
       res.send(result);
-    })
+    });
+
+
+
+
+    // app.put('/user', async (req, res) => {
+    //   const user = req.body;
+
+    //   const options = { upsert: true }
+    //   const query = { email: user?.email }
+    //   const updateDoc = {
+    //     $set: {
+    //       ...user,
+    //     }
+    //   }
+    //   const result = await userCollection.updateOne(query, updateDoc, options)
+    //   return result;
+    // })
+
+    // app.post('/users', async (req, res) => {
+    //   const user = req.body;
+    //   // insert email if user doesn't exist
+    //   const query = { email: user?.email }
+    //   const existingUser = await userCollection.findOne(query);
+    //   if (existingUser) {
+    //     return res.send({ message: 'User Already Exists', insertedId: null })
+    //   }
+    //   const result = await userCollection.insertOne(user);
+    //   res.send(result);
+    // })
 
     app.patch('/users/admin/:id', async (req, res) => {
       const id = req.params.id;
@@ -99,9 +150,9 @@ async function run() {
       res.send(result);
     })
 
-     // Get biodata by email
-  
-     app.get('/myBiodata/:contactEmail', async (req, res) => {
+    // Get biodata by email
+
+    app.get('/myBiodata/:contactEmail', async (req, res) => {
       console.log(req.params.contactEmail);
       const result = await biodataCollection.find({ contactEmail: req.params.contactEmail }).toArray();
       res.send(result);
