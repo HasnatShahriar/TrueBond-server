@@ -100,11 +100,40 @@ async function run() {
     })
 
 
+    //  handle creation and update of biodata
     app.put('/biodatas', async (req, res) => {
-      const item = req.body;
-      const result = await biodataCollection.insertOne(item);
-      res.send(result)
-    })
+      const biodata = req.body;
+      try {
+        // Check if the biodata document already exists
+        const existingBiodata = await biodataCollection.findOne({ contactEmail: biodata.contactEmail });
+        let newBiodataId;
+        if (!existingBiodata) {
+          // If the biodata doesn't exist, find the last created biodata id
+          const lastBiodata = await biodataCollection.find().sort({ _id: -1 }).limit(1).toArray();
+          newBiodataId = lastBiodata.length === 0 ? 1 : lastBiodata[0]._id + 1;
+        }
+
+        // Set the new id in the biodata
+        biodata.biodataId = newBiodataId;
+
+        // If the biodata already exists, update it
+        if (existingBiodata) {
+          const filter = { contactEmail: biodata.contactEmail };
+          const updateDoc = {
+            $set: { ...biodata }
+          };
+          const result = await biodataCollection.updateOne(filter, updateDoc);
+          res.send(result);
+        } else {
+          // If the biodata doesn't exist, insert it
+          const result = await biodataCollection.insertOne(biodata);
+          res.send(result);
+        }
+      } catch (error) {
+        console.error('Error inserting/updating biodata:', error);
+        res.status(500).send({ message: 'Error inserting/updating biodata' });
+      }
+    });
 
 
     app.get('/biodatas/:id', async (req, res) => {
