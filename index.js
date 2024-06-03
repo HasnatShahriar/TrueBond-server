@@ -99,6 +99,13 @@ async function run() {
       res.send(result);
     })
 
+     // Get biodata by email
+  
+     app.get('/myBiodata/:contactEmail', async (req, res) => {
+      console.log(req.params.contactEmail);
+      const result = await biodataCollection.find({ contactEmail: req.params.contactEmail }).toArray();
+      res.send(result);
+    })
 
     //  handle creation and update of biodata
     app.put('/biodatas', async (req, res) => {
@@ -110,7 +117,7 @@ async function run() {
         if (!existingBiodata) {
           // If the biodata doesn't exist, find the last created biodata id
           const lastBiodata = await biodataCollection.find().sort({ _id: -1 }).limit(1).toArray();
-          newBiodataId = lastBiodata.length === 0 ? 1 : lastBiodata[0]._id + 1;
+          newBiodataId = lastBiodata.length === 0 ? 1 : lastBiodata[0].biodataId + 1;
         }
 
         // Set the new id in the biodata
