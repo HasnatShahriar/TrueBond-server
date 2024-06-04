@@ -37,7 +37,7 @@ async function run() {
       res.send(result);
     });
 
-    // save user data in db
+    // save a user data in db
 
     app.put('/user', async (req, res) => {
       const user = req.body;
@@ -45,6 +45,13 @@ async function run() {
       if (!user || !user.email) {
         return res.status(400).send({ message: "User email is required" });
       }
+
+      // get a user info by email
+      app.get('/user/:email', async (req, res) => {
+        const email = req.params.email
+        const result = await userCollection.findOne({ email })
+        res.send(result)
+      })
 
       // check if user already exists in db
       const isExist = await userCollection.findOne(query)
