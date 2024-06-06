@@ -1,15 +1,24 @@
 
+
 const express = require('express');
 const app = express();
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
 require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 const port = process.env.PORT || 5000;
 
 // Middlewares
-app.use(cors());
+const corsOptions = {
+  origin: ["http://localhost:5173"],
+  credentials: true,
+  optionsSuccessStatus: 200,
+};
+app.use(cors(corsOptions));
 app.use(express.json());
+app.use(cookieParser());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.ihpbk8d.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
@@ -22,6 +31,29 @@ const client = new MongoClient(uri, {
   }
 });
 
+// Middleware to log requests
+const logger = (req, res, next) => {
+  console.log('log: info', req.hostname, req.originalUrl);
+  next();
+};
+
+// Middleware to verify JWT token
+const verifyToken = async (req, res, next) => {
+  const token = req.cookies?.token;
+  console.log('token in the middleware', token);
+  if (!token) {
+    return res.status(401).send({ message: 'unauthorized access' });
+  }
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+    if (err) {
+      console.log(err);
+      return res.status(401).send({ message: 'unauthorized access' });
+    }
+    req.user = decoded;
+    next();
+  });
+};
+
 async function run() {
   try {
     await client.connect();
@@ -31,17 +63,47 @@ async function run() {
     const userCollection = client.db("trueBond").collection("users");
     const favoritesCollection = client.db("trueBond").collection("favorites");
 
-    // Users related API
+    // JWT generator
+    app.post('/jwt', logger, async (req, res) => {
+      const user = req.body;
+      console.log(user);
 
-    // Aggregation endpoint
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
+        expiresIn: '1d'
+      });
+
+      // Log the generated token
+      console.log('Generated Token:', token);
+
+
+      res
+        .cookie('token', token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production' ? true : false,
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+        })
+        .send({ success: true });
+    });
+
+    // Logout route
+    app.post('/logout', async (req, res) => {
+      const user = req.body;
+      console.log('logging out', user);
+      res
+        .clearCookie('token', {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production' ? true : false,
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+        })
+        .send({ success: true });
+    });
+
+    // Users related API
     app.get('/premium-profiles', async (req, res) => {
       try {
         const sortOrder = req.query.sortOrder === 'descending' ? -1 : 1;
-
         const pipeline = [
-          {
-            $match: { role: 'premium' }
-          },
+          { $match: { role: 'premium' } },
           {
             $lookup: {
               from: 'biodatas',
@@ -50,12 +112,8 @@ async function run() {
               as: 'biodata'
             }
           },
-          {
-            $unwind: '$biodata'
-          },
-          {
-            $sort: { 'biodata.age': sortOrder }
-          },
+          { $unwind: '$biodata' },
+          { $sort: { 'biodata.age': sortOrder } },
           {
             $project: {
               _id: '$biodata._id',
@@ -70,7 +128,6 @@ async function run() {
             }
           }
         ];
-
         const result = await userCollection.aggregate(pipeline).toArray();
         res.send(result);
       } catch (error) {
@@ -79,29 +136,15 @@ async function run() {
       }
     });
 
-
-    // all users
     app.get('/users', async (req, res) => {
       const result = await userCollection.find().toArray();
       res.send(result);
     });
 
-
-
-
-    // only premium 
-    // app.get('/users/requested-premium', async (req, res) => {
-    //   const query = { status: 'Requested for Premium' };
-    //   const result = await userCollection.find(query).toArray();
-    //   res.send(result);
-    // });
-
     app.get('/users/requested-premium', async (req, res) => {
       try {
         const pipeline = [
-          {
-            $match: { status: 'Requested for Premium' }
-          },
+          { $match: { status: 'Requested for Premium' } },
           {
             $lookup: {
               from: 'biodatas',
@@ -110,12 +153,7 @@ async function run() {
               as: 'biodata'
             }
           },
-          {
-            $unwind: {
-              path: '$biodata',
-              preserveNullAndEmptyArrays: true
-            }
-          },
+          { $unwind: { path: '$biodata', preserveNullAndEmptyArrays: true } },
           {
             $project: {
               _id: '$biodata._id',
@@ -126,7 +164,6 @@ async function run() {
             }
           }
         ];
-
         const result = await userCollection.aggregate(pipeline).toArray();
         res.send(result);
       } catch (error) {
@@ -135,15 +172,6 @@ async function run() {
       }
     });
 
-
-
-
-
-
-
-
-
-    // Get all premium users
     app.get('/users/premium', async (req, res) => {
       const query = { role: 'premium' };
       try {
@@ -154,7 +182,6 @@ async function run() {
       }
     });
 
-    // Save a user data in db
     app.put('/user', async (req, res) => {
       const user = req.body;
       console.log('Received user data:', user);
@@ -166,17 +193,14 @@ async function run() {
 
       try {
         const isExist = await userCollection.findOne(query);
-        // console.log('User exists:', isExist);
 
         if (isExist) {
           if (user.status === 'Requested for Premium') {
             const result = await userCollection.updateOne(query, {
               $set: { status: user?.status }
             });
-            // console.log('User status updated:', result);
             return res.send(result);
           } else {
-            console.log('User already exists but no status change requested');
             return res.send(isExist);
           }
         }
@@ -189,49 +213,34 @@ async function run() {
           }
         };
         const result = await userCollection.updateOne(query, updateDoc, options);
-        console.log('User data saved:', result);
         res.send(result);
       } catch (error) {
-        // console.error('Error saving user:', error);
         res.status(500).send({ message: 'Internal Server Error' });
       }
     });
 
-
-    // Get a user info by email
-    app.get('/user/:email', async (req, res) => {
+    app.get('/user/:email', verifyToken, async (req, res) => {
       const email = req.params.email;
       const result = await userCollection.findOne({ email });
       res.send(result);
     });
 
-    // Set user role to admin
     app.patch('/users/admin/:id', async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
-      const updatedDoc = {
-        $set: {
-          role: 'admin'
-        }
-      };
+      const updatedDoc = { $set: { role: 'admin' } };
       const result = await userCollection.updateOne(filter, updatedDoc);
       res.send(result);
     });
 
-    // Set user role to premium
     app.patch('/users/premium/:id', async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
-      const updatedDoc = {
-        $set: {
-          role: 'premium'
-        }
-      };
+      const updatedDoc = { $set: { role: 'premium' } };
       const result = await userCollection.updateOne(filter, updatedDoc);
       res.send(result);
     });
 
-    // Search users by username
     app.get('/users/search', async (req, res) => {
       const username = req.query.username;
       if (!username) {
@@ -242,25 +251,21 @@ async function run() {
       res.send(result);
     });
 
-    // Review related API
     app.get('/reviews', async (req, res) => {
       const result = await reviewCollection.find().toArray();
       res.send(result);
     });
 
-    // Biodata related API
     app.get('/biodatas', async (req, res) => {
       const result = await biodataCollection.find().toArray();
       res.send(result);
     });
 
-    // Get biodata by email
     app.get('/myBiodata/:contactEmail', async (req, res) => {
       const result = await biodataCollection.find({ contactEmail: req.params.contactEmail }).toArray();
       res.send(result);
     });
 
-    // Handle creation and update of biodata
     app.put('/biodatas', async (req, res) => {
       const biodata = req.body;
       try {
@@ -285,7 +290,6 @@ async function run() {
           res.send(result);
         }
       } catch (error) {
-        // console.error('Error inserting/updating biodata:', error);
         res.status(500).send({ message: 'Error inserting/updating biodata' });
       }
     });
@@ -297,7 +301,6 @@ async function run() {
       res.send(result);
     });
 
-    // stats or analytics
     app.get('/admin-stats', async (req, res) => {
       try {
         const totalBiodata = await biodataCollection.estimatedDocumentCount();
@@ -313,12 +316,10 @@ async function run() {
           premiumBiodataCount,
         });
       } catch (error) {
-        // console.error('Error fetching biodata stats:', error);
         res.status(500).send({ message: 'Error fetching biodata stats' });
       }
     });
 
-    // for counter section
     app.get('/counter-section', async (req, res) => {
       try {
         const totalBiodata = await biodataCollection.estimatedDocumentCount();
@@ -335,13 +336,10 @@ async function run() {
           femaleBiodataCount,
         });
       } catch (error) {
-        // console.error('Error fetching biodata stats:', error);
         res.status(500).send({ message: 'Error fetching biodata stats' });
       }
     });
 
-    // favorite related api
-    // Endpoint to add a biodata to favorites
     app.post('/favorites', async (req, res) => {
       const { biodataId } = req.body;
       if (!biodataId) {
@@ -357,12 +355,10 @@ async function run() {
         const result = await favoritesCollection.insertOne({ biodataId });
         res.send(result);
       } catch (error) {
-        // console.error('Error adding to favorites:', error);
         res.status(500).send({ message: 'Error adding to favorites' });
       }
     });
 
-    // Endpoint to get all favorite biodatas
     app.get('/favorites', async (req, res) => {
       try {
         const favorites = await favoritesCollection.find().toArray();
@@ -371,24 +367,20 @@ async function run() {
         }).toArray();
         res.send(favoriteBiodatas);
       } catch (error) {
-        // console.error('Error fetching favorites:', error);
         res.status(500).send({ message: 'Error fetching favorites' });
       }
     });
 
-    // Endpoint to delete a favorite biodata
     app.delete('/favorites/:id', async (req, res) => {
       const id = req.params.id;
       try {
         const result = await favoritesCollection.deleteOne({ biodataId: id });
         res.send(result);
       } catch (error) {
-        // console.error('Error deleting favorite:', error);
         res.status(500).send({ message: 'Error deleting favorite' });
       }
     });
 
-    // send a ping confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } catch (error) {
