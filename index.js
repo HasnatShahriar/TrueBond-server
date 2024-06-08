@@ -11,7 +11,7 @@ const port = process.env.PORT || 5000;
 
 // Middlewares
 const corsOptions = {
-  origin: ["http://localhost:5173", "http://localhost:5174"],
+  origin: ["http://localhost:5173", "http://localhost:5174", "https://true-bond.netlify.app"],
   credentials: true,
   optionsSuccessStatus: 200,
 };
@@ -53,15 +53,29 @@ const verifyToken = async (req, res, next) => {
   });
 };
 
+// use verifyAdmin after verifyToken
+const verifyAdmin = async (req, res, next) => {
+  const email = req.decoded.email;
+  const query = { email: email };
+  const user = await userCollection.findOne(query);
+  const isAdmin = user?.role === 'admin';
+  if (!isAdmin) {
+    return res.status(403).send({ message: 'forbidden message' });
+  }
+  next();
+
+}
+
+
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
 
     const biodataCollection = client.db("trueBond").collection("biodatas");
-    const reviewCollection = client.db("trueBond").collection("reviews");
     const userCollection = client.db("trueBond").collection("users");
     const favoritesCollection = client.db("trueBond").collection("favorites");
     const paymentCollection = client.db("trueBond").collection("payments");
+    const successStoryCollection = client.db("trueBond").collection("stories");
 
     // JWT generator
     app.post('/jwt', logger, async (req, res) => {
@@ -97,6 +111,24 @@ async function run() {
         })
         .send({ success: true });
     });
+
+    // got married & success-story related api
+    app.post('/success-stories', async (req, res) => {
+      const newStory = req.body;
+      const result = await successStoryCollection.insertOne(newStory);
+      res.send(result);
+    })
+
+
+    app.get('/success-stories', async (req, res) => {
+      try {
+        const result = await successStoryCollection.find().toArray();
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: 'Error fetching success stories' });
+      }
+    });
+
 
     // Users related API
     app.get('/premium-profiles', async (req, res) => {
@@ -136,12 +168,12 @@ async function run() {
       }
     });
 
-    app.get('/users', async (req, res) => {
+    app.get('/users',verifyToken, verifyAdmin, async (req, res) => {
       const result = await userCollection.find().toArray();
       res.send(result);
     });
 
-    app.get('/users/requested-premium', async (req, res) => {
+    app.get('/users/requested-premium',verifyToken,verifyAdmin, async (req, res) => {
       try {
         const pipeline = [
           { $match: { status: 'Requested for Premium' } },
@@ -156,11 +188,13 @@ async function run() {
           { $unwind: { path: '$biodata', preserveNullAndEmptyArrays: true } },
           {
             $project: {
-              _id: '$biodata._id',
+              _id: 1,
               email: '$biodata.contactEmail',
               name: '$biodata.name',
               biodataType: '$biodata.biodataType',
-              biodataId: '$biodata.biodataId'
+              biodataId: '$biodata.biodataId',
+              role: '$biodata.role',
+              id: '$users._id'
             }
           }
         ];
@@ -172,7 +206,7 @@ async function run() {
       }
     });
 
-    app.get('/users/premium', async (req, res) => {
+    app.get('/users/premium',verifyToken, async (req, res) => {
       const query = { role: 'premium' };
       try {
         const result = await userCollection.find(query).toArray();
@@ -219,13 +253,13 @@ async function run() {
       }
     });
 
-    app.get('/user/:email', async (req, res) => {
+    app.get('/user/:email',verifyToken, async (req, res) => {
       const email = req.params.email;
       const result = await userCollection.findOne({ email });
       res.send(result);
     });
 
-    app.patch('/users/admin/:id', async (req, res) => {
+    app.patch('/users/admin/:id',verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
       const updatedDoc = { $set: { role: 'admin' } };
@@ -233,13 +267,14 @@ async function run() {
       res.send(result);
     });
 
-    app.patch('/users/premium/:id', async (req, res) => {
+    app.patch('/users/premium/:id',verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
       const updatedDoc = { $set: { role: 'premium' } };
       const result = await userCollection.updateOne(filter, updatedDoc);
       res.send(result);
     });
+
 
     app.get('/users/search', async (req, res) => {
       const username = req.query.username;
@@ -251,11 +286,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get('/reviews', async (req, res) => {
-      const result = await reviewCollection.find().toArray();
-      res.send(result);
-    });
-
+    // biodatas related api
     app.get('/biodatas', async (req, res) => {
       const result = await biodataCollection.find().toArray();
       res.send(result);
@@ -279,9 +310,10 @@ async function run() {
         biodata.biodataId = newBiodataId;
 
         if (existingBiodata) {
+          biodata.biodataId = existingBiodata.biodataId
           const filter = { contactEmail: biodata.contactEmail };
           const updateDoc = {
-            $set: { ...biodata }
+            $set: { ...biodata,biodataId:existingBiodata.biodataId }
           };
           const result = await biodataCollection.updateOne(filter, updateDoc);
           res.send(result);
@@ -294,6 +326,33 @@ async function run() {
       }
     });
 
+
+    // app.put('/biodatas',verifyToken, async (req, res) => {
+    //   const biodata = req.body;
+    //   const query = { contactEmail: biodata?.contactEmail };
+    //   const existingBiodata = await biodataCollection.findOne(query);
+
+    //   // if the document doesn't exist or it doesn't have a biodataId
+    //   let biodataId;
+    //   if (!existingBiodata || !existingBiodata.biodataId) {
+    //     const count = await biodataCollection.countDocuments();
+    //     biodataId = count + 1;
+    //   } else {
+    //     biodataId = existingBiodata.biodataId;
+    //   }
+
+    //   //  save user for the first time
+    //   const options = { upsert: true };
+    //   const updateDoc = {
+    //     $set: {
+    //       ...biodata,
+    //       biodataId
+    //     }
+    //   }
+    //   const result = await biodataCollection.updateOne(query, updateDoc, options)
+    //   res.send(result);
+    // })
+
     app.get('/biodatas/:id', async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
@@ -301,7 +360,8 @@ async function run() {
       res.send(result);
     });
 
-    app.get('/admin-stats', async (req, res) => {
+    //  admin-stats related api
+    app.get('/admin-stats',verifyToken, verifyAdmin, async (req, res) => {
       try {
         const totalBiodata = await biodataCollection.estimatedDocumentCount();
         const [maleBiodataCount, femaleBiodataCount] = await Promise.all([
@@ -309,17 +369,23 @@ async function run() {
           biodataCollection.countDocuments({ biodataType: "Female" }),
         ]);
         const premiumBiodataCount = await userCollection.countDocuments({ role: "premium" });
+
+        const payments = await paymentCollection.find().toArray();
+        const revenue = payments.reduce((total, item) => total + item.price, 0);
+
         res.send({
           totalBiodata,
           maleBiodataCount,
           femaleBiodataCount,
           premiumBiodataCount,
+          revenue
         });
       } catch (error) {
         res.status(500).send({ message: 'Error fetching biodata stats' });
       }
     });
 
+    // counter section related api
     app.get('/counter-section', async (req, res) => {
       try {
         const totalBiodata = await biodataCollection.estimatedDocumentCount();
@@ -328,8 +394,6 @@ async function run() {
           biodataCollection.countDocuments({ biodataType: "Female" }),
         ]);
 
-        // TODO: Got Married count
-
         res.send({
           totalBiodata,
           maleBiodataCount,
@@ -340,6 +404,7 @@ async function run() {
       }
     });
 
+    // favorites related api
     app.post('/favorites', async (req, res) => {
       const { biodataId } = req.body;
       if (!biodataId) {
@@ -382,11 +447,8 @@ async function run() {
     });
 
     // payment related api
-    app.get('/payments/:email', async (req, res) => {
+    app.get('/payments/:email',verifyToken, async (req, res) => {
       const query = { email: req.params.email }
-      // if (req.params.email !== req.decoded.email) {
-      //   return res.status(403).send({ message: 'forbidden access' });
-      // }
       const result = await paymentCollection.find(query).toArray();
       res.send(result);
     })
@@ -410,13 +472,17 @@ async function run() {
     app.post('/payments', async (req, res) => {
       const payment = req.body;
       const paymentResult = await paymentCollection.insertOne(payment);
-      // carefully delete each item from the ...(if needed)
-
       console.log('payment info', payment);
       res.send(paymentResult);
-
-
     })
+
+    app.patch('/payments/contact/:id',verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const updatedDoc = { $set: { status: 'Approved' } };
+      const result = await paymentCollection.updateOne(filter, updatedDoc);
+      res.send(result);
+    });
 
     app.delete('/payments/:id', async (req, res) => {
       const id = req.params.id;
@@ -425,19 +491,16 @@ async function run() {
       res.send(result);
     })
 
-
-    // extra testing
     app.get('/payments', async (req, res) => {
       const result = await paymentCollection.find().toArray();
-      res.send(result)
-    })
+      res.send(result);
+    });
 
 
-    ///
-    await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    // await client.db("admin").command({ ping: 1 });
+    // console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } catch (error) {
-    console.error('Error connecting to MongoDB:', error);
+    // console.error('Error connecting to MongoDB:', error);
   }
 }
 run().catch(console.dir);
