@@ -53,20 +53,6 @@ const verifyToken = async (req, res, next) => {
   });
 };
 
-// use verifyAdmin after verifyToken
-const verifyAdmin = async (req, res, next) => {
-  const email = req.decoded.email;
-  const query = { email: email };
-  const user = await userCollection.findOne(query);
-  const isAdmin = user?.role === 'admin';
-  if (!isAdmin) {
-    return res.status(403).send({ message: 'forbidden message' });
-  }
-  next();
-
-}
-
-
 async function run() {
   try {
     // await client.connect();
@@ -168,12 +154,12 @@ async function run() {
       }
     });
 
-    app.get('/users',verifyToken, verifyAdmin, async (req, res) => {
+    app.get('/users', async (req, res) => {
       const result = await userCollection.find().toArray();
       res.send(result);
     });
 
-    app.get('/users/requested-premium',verifyToken,verifyAdmin, async (req, res) => {
+    app.get('/users/requested-premium', async (req, res) => {
       try {
         const pipeline = [
           { $match: { status: 'Requested for Premium' } },
@@ -206,7 +192,7 @@ async function run() {
       }
     });
 
-    app.get('/users/premium',verifyToken, async (req, res) => {
+    app.get('/users/premium', async (req, res) => {
       const query = { role: 'premium' };
       try {
         const result = await userCollection.find(query).toArray();
@@ -253,13 +239,13 @@ async function run() {
       }
     });
 
-    app.get('/user/:email',verifyToken, async (req, res) => {
+    app.get('/user/:email', async (req, res) => {
       const email = req.params.email;
       const result = await userCollection.findOne({ email });
       res.send(result);
     });
 
-    app.patch('/users/admin/:id',verifyToken, verifyAdmin, async (req, res) => {
+    app.patch('/users/admin/:id', async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
       const updatedDoc = { $set: { role: 'admin' } };
@@ -267,7 +253,7 @@ async function run() {
       res.send(result);
     });
 
-    app.patch('/users/premium/:id',verifyToken, verifyAdmin, async (req, res) => {
+    app.patch('/users/premium/:id', async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
       const updatedDoc = { $set: { role: 'premium' } };
@@ -297,61 +283,33 @@ async function run() {
       res.send(result);
     });
 
+  
+
     app.put('/biodatas', async (req, res) => {
       const biodata = req.body;
-      try {
-        const existingBiodata = await biodataCollection.findOne({ contactEmail: biodata.contactEmail });
-        let newBiodataId;
-        if (!existingBiodata) {
-          const lastBiodata = await biodataCollection.find().sort({ _id: -1 }).limit(1).toArray();
-          newBiodataId = lastBiodata.length === 0 ? 1 : lastBiodata[0].biodataId + 1;
-        }
+      const query = { contactEmail: biodata?.contactEmail };
+      const existingBiodata = await biodataCollection.findOne(query);
 
-        biodata.biodataId = newBiodataId;
-
-        if (existingBiodata) {
-          biodata.biodataId = existingBiodata.biodataId
-          const filter = { contactEmail: biodata.contactEmail };
-          const updateDoc = {
-            $set: { ...biodata,biodataId:existingBiodata.biodataId }
-          };
-          const result = await biodataCollection.updateOne(filter, updateDoc);
-          res.send(result);
-        } else {
-          const result = await biodataCollection.insertOne(biodata);
-          res.send(result);
-        }
-      } catch (error) {
-        res.status(500).send({ message: 'Error inserting/updating biodata' });
+      // if the document doesn't exist or it doesn't have a biodataId
+      let biodataId;
+      if (!existingBiodata || !existingBiodata.biodataId) {
+        const count = await biodataCollection.countDocuments();
+        biodataId = count + 1;
+      } else {
+        biodataId = existingBiodata.biodataId;
       }
-    });
 
-
-    // app.put('/biodatas',verifyToken, async (req, res) => {
-    //   const biodata = req.body;
-    //   const query = { contactEmail: biodata?.contactEmail };
-    //   const existingBiodata = await biodataCollection.findOne(query);
-
-    //   // if the document doesn't exist or it doesn't have a biodataId
-    //   let biodataId;
-    //   if (!existingBiodata || !existingBiodata.biodataId) {
-    //     const count = await biodataCollection.countDocuments();
-    //     biodataId = count + 1;
-    //   } else {
-    //     biodataId = existingBiodata.biodataId;
-    //   }
-
-    //   //  save user for the first time
-    //   const options = { upsert: true };
-    //   const updateDoc = {
-    //     $set: {
-    //       ...biodata,
-    //       biodataId
-    //     }
-    //   }
-    //   const result = await biodataCollection.updateOne(query, updateDoc, options)
-    //   res.send(result);
-    // })
+      //  save user for the first time
+      const options = { upsert: true };
+      const updateDoc = {
+        $set: {
+          ...biodata,
+          biodataId
+        }
+      }
+      const result = await biodataCollection.updateOne(query, updateDoc, options)
+      res.send(result);
+    })
 
     app.get('/biodatas/:id', async (req, res) => {
       const id = req.params.id;
@@ -361,7 +319,7 @@ async function run() {
     });
 
     //  admin-stats related api
-    app.get('/admin-stats',verifyToken, verifyAdmin, async (req, res) => {
+    app.get('/admin-stats', async (req, res) => {
       try {
         const totalBiodata = await biodataCollection.estimatedDocumentCount();
         const [maleBiodataCount, femaleBiodataCount] = await Promise.all([
@@ -447,7 +405,7 @@ async function run() {
     });
 
     // payment related api
-    app.get('/payments/:email',verifyToken, async (req, res) => {
+    app.get('/payments/:email', async (req, res) => {
       const query = { email: req.params.email }
       const result = await paymentCollection.find(query).toArray();
       res.send(result);
@@ -476,7 +434,7 @@ async function run() {
       res.send(paymentResult);
     })
 
-    app.patch('/payments/contact/:id',verifyToken, verifyAdmin, async (req, res) => {
+    app.patch('/payments/contact/:id', async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
       const updatedDoc = { $set: { status: 'Approved' } };
