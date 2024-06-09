@@ -363,46 +363,41 @@ async function run() {
     });
 
     // favorites related api
+
     app.post('/favorites', async (req, res) => {
-      const { biodataId } = req.body;
-      if (!biodataId) {
-        return res.status(400).send({ message: 'Biodata ID is required' });
-      }
+      const biodata = req.body;
+      const result = await favoritesCollection.insertOne(biodata);
+      res.send(result);
+    })
 
-      try {
-        const existingFavorite = await favoritesCollection.findOne({ biodataId });
-        if (existingFavorite) {
-          return res.status(400).send({ message: 'Biodata is already in favorites' });
-        }
-
-        const result = await favoritesCollection.insertOne({ biodataId });
-        res.send(result);
-      } catch (error) {
-        res.status(500).send({ message: 'Error adding to favorites' });
-      }
-    });
 
     app.get('/favorites', async (req, res) => {
-      try {
-        const favorites = await favoritesCollection.find().toArray();
-        const favoriteBiodatas = await biodataCollection.find({
-          _id: { $in: favorites.map(f => new ObjectId(f.biodataId)) }
-        }).toArray();
-        res.send(favoriteBiodatas);
-      } catch (error) {
-        res.status(500).send({ message: 'Error fetching favorites' });
-      }
+     
+      const result = await favoritesCollection.find().toArray();
+      res.send(result);
     });
+
+
+    app.get('/favorites/:email', async (req, res) => {
+      const email = req.params.email;
+      const result = await favoritesCollection.find({ email }).toArray();
+      res.send(result);
+    });
+
 
     app.delete('/favorites/:id', async (req, res) => {
       const id = req.params.id;
+      const query = { _id: id }
       try {
-        const result = await favoritesCollection.deleteOne({ biodataId: id });
+        const result = await favoritesCollection.deleteOne(query);
         res.send(result);
+        console.log(result);
       } catch (error) {
         res.status(500).send({ message: 'Error deleting favorite' });
       }
     });
+  
+   
 
     // payment related api
     app.get('/payments/:email', async (req, res) => {
@@ -470,3 +465,4 @@ app.get('/', (req, res) => {
 app.listen(port, () => {
   console.log(`TrueBond server is running on port ${port}`);
 });
+
