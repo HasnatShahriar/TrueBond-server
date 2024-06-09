@@ -159,7 +159,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get('/users/requested-premium', async (req, res) => {
+    app.get('/users/requested-premium', verifyToken, async (req, res) => {
       try {
         const pipeline = [
           { $match: { status: 'Requested for Premium' } },
@@ -239,13 +239,13 @@ async function run() {
       }
     });
 
-    app.get('/user/:email', async (req, res) => {
+    app.get('/user/:email', verifyToken, async (req, res) => {
       const email = req.params.email;
       const result = await userCollection.findOne({ email });
       res.send(result);
     });
 
-    app.patch('/users/admin/:id', async (req, res) => {
+    app.patch('/users/admin/:id', verifyToken, async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
       const updatedDoc = { $set: { role: 'admin' } };
@@ -253,7 +253,7 @@ async function run() {
       res.send(result);
     });
 
-    app.patch('/users/premium/:id', async (req, res) => {
+    app.patch('/users/premium/:id', verifyToken, async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
       const updatedDoc = { $set: { role: 'premium' } };
@@ -283,9 +283,9 @@ async function run() {
       res.send(result);
     });
 
-  
 
-    app.put('/biodatas', async (req, res) => {
+
+    app.put('/biodatas', verifyToken, async (req, res) => {
       const biodata = req.body;
       const query = { contactEmail: biodata?.contactEmail };
       const existingBiodata = await biodataCollection.findOne(query);
@@ -319,7 +319,7 @@ async function run() {
     });
 
     //  admin-stats related api
-    app.get('/admin-stats', async (req, res) => {
+    app.get('/admin-stats', verifyToken, async (req, res) => {
       try {
         const totalBiodata = await biodataCollection.estimatedDocumentCount();
         const [maleBiodataCount, femaleBiodataCount] = await Promise.all([
@@ -372,13 +372,13 @@ async function run() {
 
 
     app.get('/favorites', async (req, res) => {
-     
+
       const result = await favoritesCollection.find().toArray();
       res.send(result);
     });
 
 
-    app.get('/favorites/:email', async (req, res) => {
+    app.get('/favorites/:email', verifyToken, async (req, res) => {
       const email = req.params.email;
       const result = await favoritesCollection.find({ email }).toArray();
       res.send(result);
@@ -396,18 +396,18 @@ async function run() {
         res.status(500).send({ message: 'Error deleting favorite' });
       }
     });
-  
-   
+
+
 
     // payment related api
-    app.get('/payments/:email', async (req, res) => {
+    app.get('/payments/:email', verifyToken, async (req, res) => {
       const query = { email: req.params.email }
       const result = await paymentCollection.find(query).toArray();
       res.send(result);
     })
 
     // payment intent
-    app.post('/create-payment-intent', async (req, res) => {
+    app.post('/create-payment-intent', verifyToken, async (req, res) => {
       const { price } = req.body;
       const amount = parseInt(price * 100);
       console.log(amount, 'amount inside the intent');
@@ -422,14 +422,14 @@ async function run() {
       })
     })
 
-    app.post('/payments', async (req, res) => {
+    app.post('/payments', verifyToken, async (req, res) => {
       const payment = req.body;
       const paymentResult = await paymentCollection.insertOne(payment);
       console.log('payment info', payment);
       res.send(paymentResult);
     })
 
-    app.patch('/payments/contact/:id', async (req, res) => {
+    app.patch('/payments/contact/:id', verifyToken, async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
       const updatedDoc = { $set: { status: 'Approved' } };
@@ -437,7 +437,7 @@ async function run() {
       res.send(result);
     });
 
-    app.delete('/payments/:id', async (req, res) => {
+    app.delete('/payments/:id', verifyToken, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) }
       const result = await paymentCollection.deleteOne(query);
