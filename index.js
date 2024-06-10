@@ -106,14 +106,36 @@ async function run() {
     })
 
 
+
+
     app.get('/success-stories', async (req, res) => {
       try {
-        const result = await successStoryCollection.find().toArray();
+        const { selfBiodataId, partnerBiodataId } = req.query;
+        let query = {};
+
+        // Filter by both self and partner biodata IDs if provided
+        if (selfBiodataId && partnerBiodataId) {
+          query = {
+            $or: [
+              { selfBiodataId: selfBiodataId, partnerBiodataId: partnerBiodataId },
+              { selfBiodataId: partnerBiodataId, partnerBiodataId: selfBiodataId }
+            ]
+          };
+        } else if (selfBiodataId) {
+          // Filter by self biodata ID only if provided
+          query = { selfBiodataId: selfBiodataId };
+        } else if (partnerBiodataId) {
+          // Filter by partner biodata ID only if provided
+          query = { partnerBiodataId: partnerBiodataId };
+        }
+
+        const result = await successStoryCollection.find(query).toArray();
         res.send(result);
       } catch (error) {
         res.status(500).send({ message: 'Error fetching success stories' });
       }
     });
+
 
 
     // Users related API
@@ -239,6 +261,9 @@ async function run() {
       }
     });
 
+
+
+
     app.get('/user/:email', verifyToken, async (req, res) => {
       const email = req.params.email;
       const result = await userCollection.findOne({ email });
@@ -284,32 +309,31 @@ async function run() {
     });
 
 
-
-    app.put('/biodatas', verifyToken, async (req, res) => {
+    app.put('/biodatas', async (req, res) => {
       const biodata = req.body;
       const query = { contactEmail: biodata?.contactEmail };
-      const existingBiodata = await biodataCollection.findOne(query);
 
-      // if the document doesn't exist or it doesn't have a biodataId
-      let biodataId;
-      if (!existingBiodata || !existingBiodata.biodataId) {
-        const count = await biodataCollection.countDocuments();
-        biodataId = count + 1;
-      } else {
-        biodataId = existingBiodata.biodataId;
-      }
+      try {
+        const existingBiodata = await biodataCollection.findOne(query);
+        let biodataId;
 
-      //  save user for the first time
-      const options = { upsert: true };
-      const updateDoc = {
-        $set: {
-          ...biodata,
-          biodataId
+        if (!existingBiodata || !existingBiodata.biodataId) {
+          const count = await biodataCollection.countDocuments();
+          biodataId = count + 1;
+        } else {
+          biodataId = existingBiodata.biodataId;
         }
+
+        const options = { upsert: true };
+        const updateDoc = { $set: { ...biodata, biodataId } };
+        const result = await biodataCollection.updateOne(query, updateDoc, options);
+
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: 'Internal Server Error' });
       }
-      const result = await biodataCollection.updateOne(query, updateDoc, options)
-      res.send(result);
-    })
+    });
+
 
     app.get('/biodatas/:id', async (req, res) => {
       const id = req.params.id;
@@ -319,7 +343,7 @@ async function run() {
     });
 
 
-    // Add a route for fetching similar biodata
+    // for fetching similar biodata
     app.get('/biodatas/:id/similar', async (req, res) => {
       const id = req.params.id;
 
