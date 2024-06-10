@@ -318,6 +318,25 @@ async function run() {
       res.send(result);
     });
 
+
+    // Add a route for fetching similar biodata
+    app.get('/biodatas/:id/similar', async (req, res) => {
+      const id = req.params.id;
+
+      try {
+        const biodata = await biodataCollection.findOne({ _id: new ObjectId(id) });
+
+        //  find similar biodata entries by biodataType
+        const similarBiodata = await biodataCollection.find({ biodataType: biodata.biodataType }).limit(5).toArray();
+
+        res.send(similarBiodata);
+      } catch (error) {
+        console.error('Error fetching similar biodata:', error);
+        res.status(500).send({ message: 'Error fetching similar biodata' });
+      }
+    });
+
+
     //  admin-stats related api
     app.get('/admin-stats', verifyToken, async (req, res) => {
       try {
